@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
 
@@ -287,5 +289,36 @@ test("actual database-skip gate still refuses any other failed, skipped or cance
         `${name}=${result}`,
       );
     }
+  }
+});
+
+// Run the actual shell guard against synthetic lockfiles. No browser or database needed.
+test("Playwright container guard accepts the lock and fails on either package mismatch", () => {
+  const start = workflow.indexOf("      - name: Assert Playwright image matches");
+  const block = workflow.slice(start, workflow.indexOf("\n      - name:", start + 1));
+  const script = block.split("        run: |\n")[1].split("\n").map(line => line.slice(10)).join("\n");
+  const actualLock = JSON.parse(fs.readFileSync(new URL("../frontend/package-lock.json", import.meta.url)));
+  const version = actualLock.packages["node_modules/playwright-core"].version;
+  assert.ok(workflow.includes(`image: mcr.microsoft.com/playwright:v${version}-noble@sha256:`));
+  for (const broken of [null, "playwright-core", "@playwright/test"]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "koaryu-playwright-"));
+    try {
+      const packages = Object.fromEntries(["playwright-core", "@playwright/test"].map(name =>
+        [`node_modules/${name}`, { version: name === broken ? "0.0.0" : version }]));
+      fs.writeFileSync(path.join(dir, "package-lock.json"), JSON.stringify({ packages }));
+      const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", script], { cwd: dir });
+      assert.equal(result.status === 0, broken === null, broken ?? "matching lock");
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  }
+});
+
+test("workflow refuses a mismatched image or missing version assertion", () => {
+  for (const [before, after] of [
+    ["playwright:v1.60.0-noble", "playwright:v1.59.0-noble"],
+    ["= 1.60.0", "= 1.59.0"],
+    ["-noble@sha256:", "-noble\n      # "],
+    ['--add safe.directory "$GITHUB_WORKSPACE"', '--add safe.directory "*"'],
+  ]) {
+    assert.match(validateReleaseCandidateWorkflow(workflow.replace(before, after)).join("\n"), /Frontend runtime missing control/);
   }
 });

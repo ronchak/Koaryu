@@ -48,6 +48,18 @@ with `part_enabled history` so `current` keeps only the latest. Add any file a
 history proof reads outside `supabase/`, `scripts/` and the backend history input
 to the selector's history inputs; a selector test checks this for the replay loop.
 
+`npm run check:release-attestation` also runs `check:release-inventory`. It reads
+the current and previous release from `release-states.json` and works per file:
+it reports a scanned file that names the previous release (migration head,
+preflight RPC, manifest version, provider fingerprint) without the current one,
+plus the specific structures it parses: installers and their callers, runner
+count and reachability (the history part reaches the newest restore, the former
+newest is gated with `part_enabled history`), the two preflight rendering lists
+and the rollout chain. A missing parsed file or structure is a finding. A file
+that mentions the current release anywhere can still hold a stale pin, so the
+existing suites remain the proof. It is offline, adds failures only, and keeps
+its version-bound allowlist commented in the script.
+
 ## Required checks
 
 The current workflow covers repository controls; frontend tests/lint/build/audit;
@@ -55,9 +67,15 @@ backend tests, dependency/audit/API contracts; database checks; the deterministi
 Home performance gate; secret scanning and static analysis. Inspect the workflow
 for its exact commands instead of maintaining a second inventory here.
 
-The frontend job pins Ubuntu 24.04 because the locked Playwright 1.60 browser
-installer rejects Ubuntu 26.04. Keep that runner compatible with the installed
-browser tooling when updating either; all frontend checks still run.
+The frontend job runs in the official Playwright `v1.60.0-noble` container, pinned
+by digest, with Chromium and its Ubuntu 24.04 runtime dependencies already installed.
+It replaces the network-dependent `playwright install --with-deps` step, which took
+from 20 seconds to 14 minutes and timed the job out. A pre-install assertion fails
+unless both locked Playwright packages match the image version; update the image
+tag, digest and assertion together when the lockfile changes. The image runs as
+root, so one step marks the checked-out workspace as a safe Git directory before
+the exact-head assertion. Node stays pinned, `npm ci` still installs the lockfile,
+and every frontend test, lint, build and audit command still runs unchanged.
 
 For release-process or workflow edits, run `npm run check:release-workflow`.
 Use [the verification matrix](pr-verification-matrix.md) for other local checks and

@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { committedStatement as extractStatement } from "./generate-release-attestation.mjs";
+import { committedStatement as extractStatement, modeMismatch, trackedModes, workingModeMismatch } from "./generate-release-attestation.mjs";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { CURRENT_RELEASE, migrationVersions, readinessTuple, releaseState } from "./release-attestation/states.mjs";
@@ -222,4 +222,176 @@ test("V57 declares finite complete canonical and restored platform table profile
     assert.throws(() => render_automation_tables_v57({ ...check, [field]: "*" }), /exact SHA-256/);
   }
   assert.throws(() => render_automation_tables_v57({ ...check, platformExpected: check.expected }), /distinct exact SHA-256/);
+});
+
+test("restore modes: index mode exact, owner bits exact, no extra group/other bits", () => {
+  const repository = fileURLToPath(new URL("..", import.meta.url));
+  const tracked = trackedModes(repository);
+  assert.equal(tracked.get("scripts/verify-v38-v39-restore-contract.py"), 0o100644);
+  assert.equal(tracked.get("scripts/verify-v40-v41-restore-contract.py"), 0o100755);
+  const readOnly = { source: "scripts/verify-v38-v39-restore-contract.py", mode: 0o644 };
+  const executable = { source: "scripts/verify-v40-v41-restore-contract.py", mode: 0o755 };
+  // Exact modes and restrictive umasks (077, 027, 022 minus world-exec) pass.
+  for (const mode of [0o755, 0o700, 0o750, 0o754]) assert.equal(modeMismatch(executable, 0o100000 | mode, tracked), null, mode.toString(8));
+  for (const mode of [0o644, 0o600, 0o640]) assert.equal(modeMismatch(readOnly, 0o100000 | mode, tracked), null, mode.toString(8));
+  // Group/world writability, world-exec drift and special bits fail.
+  for (const mode of [0o777, 0o775, 0o757, 0o4755, 0o2755]) {
+    assert.match(modeMismatch(executable, 0o100000 | mode, tracked), /adds permission bits/, mode.toString(8));
+  }
+  for (const mode of [0o666, 0o664, 0o646, 0o645]) {
+    assert.match(modeMismatch(readOnly, 0o100000 | mode, tracked), /adds permission bits/, mode.toString(8));
+  }
+  // Owner bits must match exactly (review row: index 100755, disk 0644).
+  assert.match(modeMismatch(executable, 0o100644, tracked), /owner permissions 600 !== 700/);
+  assert.match(modeMismatch(executable, 0o100655, tracked), /owner permissions 600 !== 700/);
+  assert.match(modeMismatch(readOnly, 0o100744, tracked), /owner permissions 700 !== 600/);
+  assert.match(modeMismatch(readOnly, 0o100444, tracked), /owner permissions 400 !== 600/);
+  // Index mode must equal the attested mode (review row: index 100644, disk 0755).
+  assert.match(modeMismatch({ ...readOnly, mode: 0o755 }, 0o100755, tracked), /index mode 100644 !== 100755/);
+  assert.match(modeMismatch(readOnly, 0o100644, new Map([[readOnly.source, 0o120000]])), /index mode 120000 !== 100644/);
+  // A working-tree symlink is rejected whatever its target, tracked or not.
+  assert.match(modeMismatch(executable, 0o120755, tracked), /not a regular file/);
+  assert.match(modeMismatch(executable, 0o120755, new Map()), /not a regular file/);
+  // Untracked files keep the exact comparison.
+  const untracked = new Map();
+  assert.equal(modeMismatch(readOnly, 0o100644, untracked), null);
+  assert.match(modeMismatch(readOnly, 0o100600, untracked), /mode 600 !== 644/);
+  assert.match(modeMismatch(executable, 0o100777, untracked), /mode 777 !== 755/);
+});
+
+test("restore modes on real files: every row of the review's mode table", () => {
+  const temporary = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "koaryu-generator-modes-")));
+  const gitIn = (...args) => execFileSync("git", ["-c", "core.fileMode=true", "-c", "core.symlinks=true", ...args],
+    { cwd: temporary, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  try {
+    gitIn("init", "-q");
+    fs.mkdirSync(path.join(temporary, "scripts"));
+    const artifact = { source: "scripts/restore.py", mode: 0o755 };
+    const file = path.join(temporary, artifact.source);
+    const target = path.join(temporary, "target.py");
+    fs.writeFileSync(target, "same\n");
+    fs.chmodSync(target, 0o700);
+    const reset = () => {
+      fs.rmSync(file, { force: true });
+      fs.writeFileSync(file, "same\n");
+      fs.chmodSync(file, 0o755);
+      gitIn("add", "--chmod=+x", artifact.source);
+    };
+    const check = () => workingModeMismatch(temporary, artifact, trackedModes(temporary));
+    const rows = [
+      ["index 100755, disk 0755", () => {}, null],
+      ["index 100755, disk 0777", () => fs.chmodSync(file, 0o777), /adds permission bits 22/],
+      ["index 100755, disk 0775", () => fs.chmodSync(file, 0o775), /adds permission bits 20/],
+      ["index 100755, disk 0757", () => fs.chmodSync(file, 0o757), /adds permission bits 2/],
+      // Allowed by policy: group/other bits are a subset of 0755 (restrictive umask).
+      ["index 100755, disk 0754", () => fs.chmodSync(file, 0o754), null],
+      ["index 100755, disk 0700 (umask 077)", () => fs.chmodSync(file, 0o700), null],
+      ["index 100755, disk 0644", () => fs.chmodSync(file, 0o644), /owner permissions 600 !== 700/],
+      ["index 100644, disk 0755", () => gitIn("update-index", "--chmod=-x", artifact.source), /index mode 100644 !== 100755/],
+      ["symlink staged as 120000 to an identical 0700 target", () => {
+        fs.rmSync(file); fs.symlinkSync(target, file); gitIn("add", artifact.source);
+      }, /not a regular file/],
+      ["unstaged symlink, index still 100755, identical 0700 target", () => {
+        fs.rmSync(file); fs.symlinkSync(target, file);
+      }, /not a regular file/],
+    ];
+    for (const [name, arrange, expected] of rows) {
+      reset();
+      arrange();
+      if (expected === null) assert.equal(check(), null, name);
+      else assert.match(check() ?? "", expected, name);
+    }
+    // The staged symlink is also an index-mode failure on its own.
+    reset();
+    fs.rmSync(file); fs.symlinkSync(target, file); gitIn("add", artifact.source);
+    assert.equal(trackedModes(temporary).get(artifact.source), 0o120000);
+    assert.match(modeMismatch(artifact, 0o100755, trackedModes(temporary)), /index mode 120000 !== 100755/);
+    // Missing file: ENOENT, as before.
+    reset();
+    fs.rmSync(file);
+    assert.throws(check, { code: "ENOENT" });
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test("--write regenerates exactly the committed generated files and modes, then is a no-op", () => {
+  const repository = fileURLToPath(new URL("..", import.meta.url));
+  // Real path: the generator runs main() only when argv[1] is its own resolved path.
+  const temporary = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "koaryu-generator-write-")));
+  try {
+    fs.cpSync(path.join(repository, "scripts/release-attestation"), path.join(temporary, "scripts/release-attestation"), { recursive: true });
+    fs.copyFileSync(path.join(repository, "scripts/generate-release-attestation.mjs"), path.join(temporary, "scripts/generate-release-attestation.mjs"));
+    fs.cpSync(path.join(repository, "supabase/migrations"), path.join(temporary, "supabase/migrations"), { recursive: true });
+    fs.mkdirSync(path.join(temporary, "backend/app/services"), { recursive: true });
+    const generated = "scripts/release-attestation/generated-history.mjs";
+    fs.writeFileSync(path.join(temporary, generated), "stale\n");
+    const run = () => spawnSync(process.execPath, [path.join(temporary, "scripts/generate-release-attestation.mjs"), "--write"], { encoding: "utf8" });
+    const first = run();
+    assert.equal(first.status, 0, first.stderr);
+    const written = JSON.parse(first.stdout).written;
+    assert.ok(written.includes(generated));
+    assert.ok(written.includes("backend/app/services/generated_release_readiness.py"));
+    const tracked = trackedModes(repository);
+    for (const file of written) {
+      assert.equal(fs.readFileSync(path.join(temporary, file), "utf8"), fs.readFileSync(path.join(repository, file), "utf8"), file);
+      if (tracked.has(file) && /restore-contract/.test(file)) {
+        assert.equal(fs.statSync(path.join(temporary, file)).mode & 0o777, tracked.get(file) & 0o777, `${file}: mode`);
+      }
+    }
+    assert.equal(written.filter(file => /restore-contract/.test(file)).length,
+      fs.readdirSync(path.join(repository, "scripts")).filter(name => /^verify-v\d+-v\d+-restore-contract\./.test(name)).length);
+    const second = run();
+    assert.equal(second.status, 0, second.stderr);
+    assert.deepEqual(JSON.parse(second.stdout), { written: [], result: "unchanged" });
+    const combined = spawnSync(process.execPath, [path.join(temporary, "scripts/generate-release-attestation.mjs"), "--write", "--check"], { encoding: "utf8" });
+    assert.notEqual(combined.status, 0);
+    assert.match(combined.stderr, /Choose --check, --write or --output-dir/);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test("--write refuses a symlinked destination and leaves its outside target untouched", () => {
+  const repository = fileURLToPath(new URL("..", import.meta.url));
+  const temporary = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "koaryu-generator-symlink-")));
+  const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "koaryu-generator-outside-")));
+  try {
+    fs.cpSync(path.join(repository, "scripts/release-attestation"), path.join(temporary, "scripts/release-attestation"), { recursive: true });
+    fs.copyFileSync(path.join(repository, "scripts/generate-release-attestation.mjs"), path.join(temporary, "scripts/generate-release-attestation.mjs"));
+    fs.cpSync(path.join(repository, "supabase/migrations"), path.join(temporary, "supabase/migrations"), { recursive: true });
+    fs.mkdirSync(path.join(temporary, "backend/app/services"), { recursive: true });
+    const run = () => spawnSync(process.execPath, [path.join(temporary, "scripts/generate-release-attestation.mjs"), "--write"], { encoding: "utf8" });
+    // The review's scenario: generated-history.mjs is a symlink to a file outside the tree.
+    const sentinel = path.join(outside, "sentinel.txt");
+    fs.writeFileSync(sentinel, "outside\n");
+    const generated = path.join(temporary, "scripts/release-attestation/generated-history.mjs");
+    fs.rmSync(generated);
+    fs.symlinkSync(sentinel, generated);
+    const linked = run();
+    assert.notEqual(linked.status, 0);
+    assert.match(linked.stderr, /generated-history\.mjs: refusing to write through a symlink/);
+    assert.equal(fs.readFileSync(sentinel, "utf8"), "outside\n");
+    // Nothing else was written before the refusal.
+    assert.deepEqual(fs.readdirSync(path.join(temporary, "backend/app/services")), []);
+    // A dangling symlink is refused too (existsSync would have said "absent").
+    fs.rmSync(sentinel);
+    const dangling = run();
+    assert.notEqual(dangling.status, 0);
+    assert.match(dangling.stderr, /refusing to write through a symlink/);
+    assert.equal(fs.existsSync(sentinel), false);
+    // A symlinked parent directory that leaves the tree is refused.
+    fs.rmSync(generated);
+    fs.writeFileSync(generated, "stale\n");
+    fs.rmSync(path.join(temporary, "backend/app/services"), { recursive: true });
+    fs.symlinkSync(outside, path.join(temporary, "backend/app/services"));
+    const parent = run();
+    assert.notEqual(parent.status, 0);
+    assert.match(parent.stderr, /generated_release_readiness\.py: refusing to write outside the repository/);
+    assert.deepEqual(fs.readdirSync(outside), []);
+    assert.equal(fs.readFileSync(generated, "utf8"), "stale\n");
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
 });
