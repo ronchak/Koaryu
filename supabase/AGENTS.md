@@ -19,6 +19,12 @@ generated `.temp/` state.
   `verification/release_ui_atomic_contract.sql`; unknown states must remain refused.
   Use the shared generator for declarations, not manual edits to generated files.
   See [attestation authoring](../scripts/release-attestation/README.md).
+- After declaring a new release in `release-states.json`, run
+  `npm run check:release-inventory`. In about a second it lists every stale
+  current-release pin (installers and their callers, history-exact contract arms,
+  runner dispatch, rollout chain, preflight lists, version asserts), each with its
+  file, line and the expected edit. `npm run generate:release-attestation -- --write`
+  rewrites the generated history/readiness modules and restore scripts in place.
 
 ## Verification
 

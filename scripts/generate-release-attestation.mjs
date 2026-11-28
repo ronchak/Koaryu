@@ -180,17 +180,53 @@ function restoreArtifacts(filenames, versions) {
   };
 }
 
+// Modes Git records for tracked files (index entries). The working-tree mode
+// depends on the local umask; Git stores only 644 or 755, which CI checks out.
+export function trackedModes(repositoryRoot = root) {
+  try {
+    const top = execFileSync("git", ["rev-parse", "--show-toplevel"],
+      { cwd: repositoryRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    if (fs.realpathSync(top) !== fs.realpathSync(repositoryRoot)) return new Map();
+    const entries = execFileSync("git", ["ls-files", "-s", "-z", "--", "scripts"],
+      { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 16 << 20 });
+    return new Map(entries.split("\0").filter(Boolean).map(entry => {
+      const [metadata, file] = entry.split("\t");
+      return [file, Number.parseInt(metadata.split(" ")[0], 8) & 0o777];
+    }));
+  } catch {
+    return new Map();
+  }
+}
+
+// A tracked file must have the declared mode in Git and the matching
+// executable bit on disk; an untracked file keeps the exact stat comparison.
+export function modeMismatch(artifact, workingMode, tracked) {
+  const committed = tracked.get(artifact.source);
+  if (committed === undefined) {
+    return (workingMode & 0o777) === artifact.mode ? null : `${artifact.source}: mode ${(workingMode & 0o777).toString(8)} !== ${artifact.mode.toString(8)}`;
+  }
+  if (committed !== artifact.mode) return `${artifact.source}: committed mode ${committed.toString(8)} !== ${artifact.mode.toString(8)}`;
+  if (Boolean(workingMode & 0o100) !== Boolean(artifact.mode & 0o100)) {
+    return `${artifact.source}: working-tree executable bit differs from committed mode ${committed.toString(8)}`;
+  }
+  return null;
+}
+
 export function main(argv = process.argv.slice(2)) {
   let check = false;
+  let write = false;
   let outputDirectory;
   for (let index = 0; index < argv.length; index++) {
     const argument = argv[index];
     if (argument === "--check" && !check) check = true;
+    else if (argument === "--write" && !write) write = true;
     else if (argument === "--output-dir" && outputDirectory === undefined && argv[index + 1]
         && !argv[index + 1].startsWith("--")) outputDirectory = path.resolve(argv[++index]);
     else throw new Error(`Unknown, repeated or incomplete argument: ${argument}`);
   }
-  if (check === Boolean(outputDirectory)) throw new Error("Choose --check or --output-dir <empty-directory>");
+  if ([check, write, Boolean(outputDirectory)].filter(Boolean).length !== 1) {
+    throw new Error("Choose --check, --write or --output-dir <empty-directory>");
+  }
   const filenames = fs.readdirSync(path.join(root, "supabase/migrations")).filter(name => name.endsWith(".sql")).sort();
   const versions = migrationVersions(filenames);
   assert.equal(releaseState(CURRENT_RELEASE, versions).head, versions.at(-1), "The current release must declare the last migration");
@@ -208,9 +244,11 @@ export function main(argv = process.argv.slice(2)) {
       const existing = fs.readFileSync(path.join(root, artifact.source), "utf8");
       assert.equal(artifact.text, committedStatement(existing, artifact.signature), `${artifact.source}: ${artifact.signature}`);
     }
+    const tracked = trackedModes();
     for (const artifact of restores.artifacts) {
       assert.equal(artifact.text, fs.readFileSync(path.join(root, artifact.source), "utf8"), artifact.source);
-      assert.equal(fs.statSync(path.join(root, artifact.source)).mode & 0o777, artifact.mode, `${artifact.source}: mode`);
+      const mismatch = modeMismatch(artifact, fs.statSync(path.join(root, artifact.source)).mode, tracked);
+      if (mismatch) throw new Error(mismatch);
     }
     assert.equal(history, fs.readFileSync(path.join(root, "scripts/release-attestation/generated-history.mjs"), "utf8"), "Generated history is stale");
     assert.equal(readiness, fs.readFileSync(path.join(root, "scripts/release-attestation/generated-readiness.mjs"), "utf8"), "Generated readiness aliases are stale");
@@ -222,6 +260,30 @@ export function main(argv = process.argv.slice(2)) {
     return;
   }
   if (restores.missing.length) throw new Error(`Restore generation remains incomplete: ${restores.missing.join(", ")}`);
+  if (write) {
+    // Writes only the generated in-repository files --check compares. SQL
+    // fragments still go into migrations by review through --output-dir.
+    const written = [];
+    const modules = [
+      { source: "scripts/release-attestation/generated-history.mjs", text: history },
+      { source: "scripts/release-attestation/generated-readiness.mjs", text: readiness },
+      { source: "backend/app/services/generated_release_readiness.py", text: backendReadiness },
+    ];
+    for (const artifact of [...restores.artifacts, ...modules]) {
+      const destination = path.join(root, artifact.source);
+      const existing = fs.existsSync(destination) ? fs.readFileSync(destination, "utf8") : null;
+      if (existing !== artifact.text) {
+        fs.writeFileSync(destination, artifact.text, artifact.mode === undefined ? {} : { mode: artifact.mode });
+        written.push(artifact.source);
+      }
+      if (artifact.mode !== undefined && (fs.statSync(destination).mode & 0o777) !== artifact.mode) {
+        fs.chmodSync(destination, artifact.mode);
+        if (!written.includes(artifact.source)) written.push(artifact.source);
+      }
+    }
+    console.log(JSON.stringify({ written, result: written.length ? "updated" : "unchanged" }));
+    return;
+  }
   if (fs.existsSync(outputDirectory) && fs.readdirSync(outputDirectory).length) {
     throw new Error("Output directory must be empty; existing files are never overwritten");
   }

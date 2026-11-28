@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { committedStatement as extractStatement } from "./generate-release-attestation.mjs";
+import { committedStatement as extractStatement, modeMismatch, trackedModes } from "./generate-release-attestation.mjs";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { CURRENT_RELEASE, migrationVersions, readinessTuple, releaseState } from "./release-attestation/states.mjs";
@@ -222,4 +222,61 @@ test("V57 declares finite complete canonical and restored platform table profile
     assert.throws(() => render_automation_tables_v57({ ...check, [field]: "*" }), /exact SHA-256/);
   }
   assert.throws(() => render_automation_tables_v57({ ...check, platformExpected: check.expected }), /distinct exact SHA-256/);
+});
+
+test("restore modes come from the Git index, so a local umask cannot fail --check", () => {
+  const repository = fileURLToPath(new URL("..", import.meta.url));
+  const tracked = trackedModes(repository);
+  assert.equal(tracked.get("scripts/verify-v38-v39-restore-contract.py"), 0o644);
+  assert.equal(tracked.get("scripts/verify-v40-v41-restore-contract.py"), 0o755);
+  const readOnly = { source: "scripts/verify-v38-v39-restore-contract.py", mode: 0o644 };
+  const executable = { source: "scripts/verify-v40-v41-restore-contract.py", mode: 0o755 };
+  // umask 077 checkouts: 0600 and 0700 match the committed 644 and 755.
+  assert.equal(modeMismatch(readOnly, 0o100600, tracked), null);
+  assert.equal(modeMismatch(executable, 0o100700, tracked), null);
+  // A wrong executable bit on disk or a wrong committed mode still fails.
+  assert.match(modeMismatch(readOnly, 0o100700, tracked), /executable bit/);
+  assert.match(modeMismatch(executable, 0o100600, tracked), /executable bit/);
+  assert.match(modeMismatch({ ...readOnly, mode: 0o755 }, 0o100755, tracked), /committed mode 644 !== 755/);
+  // Untracked files keep the exact stat comparison.
+  const untracked = new Map();
+  assert.equal(modeMismatch(readOnly, 0o100644, untracked), null);
+  assert.match(modeMismatch(readOnly, 0o100600, untracked), /mode 600 !== 644/);
+});
+
+test("--write regenerates exactly the committed generated files and modes, then is a no-op", () => {
+  const repository = fileURLToPath(new URL("..", import.meta.url));
+  // Real path: the generator runs main() only when argv[1] is its own resolved path.
+  const temporary = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "koaryu-generator-write-")));
+  try {
+    fs.cpSync(path.join(repository, "scripts/release-attestation"), path.join(temporary, "scripts/release-attestation"), { recursive: true });
+    fs.copyFileSync(path.join(repository, "scripts/generate-release-attestation.mjs"), path.join(temporary, "scripts/generate-release-attestation.mjs"));
+    fs.cpSync(path.join(repository, "supabase/migrations"), path.join(temporary, "supabase/migrations"), { recursive: true });
+    fs.mkdirSync(path.join(temporary, "backend/app/services"), { recursive: true });
+    const generated = "scripts/release-attestation/generated-history.mjs";
+    fs.writeFileSync(path.join(temporary, generated), "stale\n");
+    const run = () => spawnSync(process.execPath, [path.join(temporary, "scripts/generate-release-attestation.mjs"), "--write"], { encoding: "utf8" });
+    const first = run();
+    assert.equal(first.status, 0, first.stderr);
+    const written = JSON.parse(first.stdout).written;
+    assert.ok(written.includes(generated));
+    assert.ok(written.includes("backend/app/services/generated_release_readiness.py"));
+    const tracked = trackedModes(repository);
+    for (const file of written) {
+      assert.equal(fs.readFileSync(path.join(temporary, file), "utf8"), fs.readFileSync(path.join(repository, file), "utf8"), file);
+      if (tracked.has(file) && /restore-contract/.test(file)) {
+        assert.equal(fs.statSync(path.join(temporary, file)).mode & 0o777, tracked.get(file), `${file}: mode`);
+      }
+    }
+    assert.equal(written.filter(file => /restore-contract/.test(file)).length,
+      fs.readdirSync(path.join(repository, "scripts")).filter(name => /^verify-v\d+-v\d+-restore-contract\./.test(name)).length);
+    const second = run();
+    assert.equal(second.status, 0, second.stderr);
+    assert.deepEqual(JSON.parse(second.stdout), { written: [], result: "unchanged" });
+    const combined = spawnSync(process.execPath, [path.join(temporary, "scripts/generate-release-attestation.mjs"), "--write", "--check"], { encoding: "utf8" });
+    assert.notEqual(combined.status, 0);
+    assert.match(combined.stderr, /Choose --check, --write or --output-dir/);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
 });
