@@ -299,7 +299,7 @@ test("Playwright container guard accepts the lock and fails on either package mi
   const script = block.split("        run: |\n")[1].split("\n").map(line => line.slice(10)).join("\n");
   const actualLock = JSON.parse(fs.readFileSync(new URL("../frontend/package-lock.json", import.meta.url)));
   const version = actualLock.packages["node_modules/playwright-core"].version;
-  assert.ok(workflow.includes(`image: mcr.microsoft.com/playwright:v${version}-noble`));
+  assert.ok(workflow.includes(`image: mcr.microsoft.com/playwright:v${version}-noble@sha256:`));
   for (const broken of [null, "playwright-core", "@playwright/test"]) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "koaryu-playwright-"));
     try {
@@ -316,7 +316,8 @@ test("workflow refuses a mismatched image or missing version assertion", () => {
   for (const [before, after] of [
     ["playwright:v1.60.0-noble", "playwright:v1.59.0-noble"],
     ["= 1.60.0", "= 1.59.0"],
-    ['npm_config_fetch_retries: "2"', 'npm_config_fetch_retries: "3"'],
+    ["-noble@sha256:", "-noble\n      # "],
+    ['--add safe.directory "$GITHUB_WORKSPACE"', '--add safe.directory "*"'],
   ]) {
     assert.match(validateReleaseCandidateWorkflow(workflow.replace(before, after)).join("\n"), /Frontend runtime missing control/);
   }

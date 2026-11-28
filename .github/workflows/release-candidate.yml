@@ -91,7 +91,7 @@ jobs:
     runs-on: ubuntu-24.04
     # Browsers and OS dependencies ship together; keep this equal to the lockfile.
     container:
-      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948
       options: --init --ipc=host
     timeout-minutes: 20
     defaults:
@@ -104,6 +104,11 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      # The image runs as root while the runner user owns the workspace; checkout
+      # registers the workspace only in its own temporary HOME.
+      - name: Trust the checked-out workspace inside the container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Assert exact candidate head
         env:
@@ -123,12 +128,6 @@ jobs:
           test "$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")" = 1.60.0
 
       - name: Install frontend dependencies
-        # npm retries individual failed HTTP fetches, never lifecycle scripts or checks.
-        env:
-          npm_config_fetch_retries: "2"
-          npm_config_fetch_retry_mintimeout: "10000"
-          npm_config_fetch_retry_maxtimeout: "20000"
-          npm_config_loglevel: http
         run: npm ci
 
       - name: Verify frontend formatting
@@ -197,7 +196,7 @@ jobs:
             backend/requirements-dev.txt
 
       - name: Install backend dependencies
-        run: python -m pip install --retries 2 -r requirements-dev.txt
+        run: python -m pip install -r requirements-dev.txt
 
       - name: Verify dependency consistency
         run: python -m pip check
@@ -314,7 +313,7 @@ jobs:
             backend/requirements-dev.txt
 
       - name: Install pinned backend test runtime for offline SDK proofs
-        run: python -m pip install --retries 2 -r backend/requirements-dev.txt
+        run: python -m pip install -r backend/requirements-dev.txt
 
       - name: Run isolated migration, restore, and concurrency proofs
         env:
@@ -354,7 +353,7 @@ jobs:
             performance/dashboard-home-budget.json
 
       - name: Install performance fixture runtime dependencies
-        run: python -m pip install --retries 2 -r backend/requirements.txt
+        run: python -m pip install -r backend/requirements.txt
 
       - name: Verify versioned performance gate inputs
         run: git ls-files --error-unmatch backend/requirements.txt performance/dashboard-home-budget.json
@@ -409,7 +408,7 @@ jobs:
           cache-dependency-path: backend/requirements-dev.txt
 
       - name: Install security tooling
-        run: python -m pip install --retries 2 -r backend/requirements-dev.txt
+        run: python -m pip install -r backend/requirements-dev.txt
 
       - name: Run Bandit
         run: python -m bandit -r backend/app -ll

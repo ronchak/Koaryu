@@ -30,7 +30,7 @@ Use this file for work under `frontend/`. Fall back to the repo root `AGENTS.md`
 - Format authored files: `cd frontend && npm run format`
 - Check authored file formatting: `cd frontend && npm run format:check`
 - Test: `cd frontend && npm run test`
-- First test setup on a fresh machine: `cd frontend && npx playwright install chromium` for mounted lifecycle tests. Linux CI uses `--with-deps`.
+- First test setup on a fresh machine: `cd frontend && npx playwright install chromium` for mounted lifecycle tests. Linux CI runs in the matching official Playwright container instead of installing browsers.
 - Workflow preview catalog: from the repo root run `npm run generate:workflow-preview-catalog` after changing the pure backend catalog, then `npm run check:workflow-preview-catalog`. Preview uses this generated snapshot with sample references and disabled live actions.
 - Live-mode workflow regressions (synthetic auth/I/O, no external data): `cd frontend && node --experimental-strip-types --test tests/workflow-stabilization-mounted.test.mjs`
 - Preview smoke e2e: `cd frontend && npm run test:e2e:preview-smoke` against a running preview-mode frontend

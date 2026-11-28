@@ -55,19 +55,15 @@ backend tests, dependency/audit/API contracts; database checks; the deterministi
 Home performance gate; secret scanning and static analysis. Inspect the workflow
 for its exact commands instead of maintaining a second inventory here.
 
-The frontend job uses the official Playwright `v1.60.0-noble` container with
-Chromium and its Ubuntu 24.04 runtime dependencies already installed. A failing
-pre-install assertion binds the image version to both locked Playwright packages;
-update the image and assertion together when the lockfile changes. Node stays
-pinned and `npm ci` still installs the lockfile, including lifecycle scripts.
-Every frontend test, lint, build and audit command still runs, including on a cold
-runner. The image replaces the network-dependent browser and apt install.
-
-Frontend npm downloads use at most two retries with 10–20 second backoff and HTTP
-logging. Explicit pip installs use at most two connection retries with pip's
-backoff and warning logs. These are client fetch retries, not retries of install
-scripts, tests, readiness checks or audits. Container initialization retains
-GitHub's runner behavior; no database startup or assertion command is retried.
+The frontend job runs in the official Playwright `v1.60.0-noble` container, pinned
+by digest, with Chromium and its Ubuntu 24.04 runtime dependencies already installed.
+It replaces the network-dependent `playwright install --with-deps` step, which took
+from 20 seconds to 14 minutes and timed the job out. A pre-install assertion fails
+unless both locked Playwright packages match the image version; update the image
+tag, digest and assertion together when the lockfile changes. The image runs as
+root, so one step marks the checked-out workspace as a safe Git directory before
+the exact-head assertion. Node stays pinned, `npm ci` still installs the lockfile,
+and every frontend test, lint, build and audit command still runs unchanged.
 
 For release-process or workflow edits, run `npm run check:release-workflow`.
 Use [the verification matrix](pr-verification-matrix.md) for other local checks and
