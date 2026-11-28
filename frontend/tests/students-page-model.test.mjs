@@ -311,6 +311,38 @@ describe("students page model", () => {
     assert.equal(filterStudentRows(rows, { ...FILTER_DEFAULTS, search: " missing " }).length, 0);
   });
 
+  it("finds local roster rows by phone without requiring a phone on every student", () => {
+    const rows = buildStudentRows(
+      [
+        student("match", { phone: "206-555-0142" }),
+        student("other", { phone: "206-555-0199" }),
+        student("empty-phone", { phone: "" }),
+        student("null-phone", { phone: null }),
+        student("missing-phone", { phone: undefined }),
+      ],
+      [],
+      "2026-05-24",
+    );
+
+    for (const search of ["206-555-0142", "555-0142", " 206-555-0142 "]) {
+      assert.deepEqual(
+        filterStudentRows(rows, { ...FILTER_DEFAULTS, search }).map((row) => row.student.id),
+        ["match"],
+        JSON.stringify(search),
+      );
+    }
+    assert.equal(filterStudentRows(rows, { ...FILTER_DEFAULTS, search: "555-0188" }).length, 0);
+    assert.equal(filterStudentRows(rows, { ...FILTER_DEFAULTS, search: " " }).length, 5);
+    assert.deepEqual(
+      filterStudentRows(rows, {
+        ...FILTER_DEFAULTS,
+        search: "206-555-0142",
+        usesDerivedRosterFilters: false,
+      }).map((row) => row.student.id),
+      rows.map((row) => row.student.id),
+    );
+  });
+
   it("preserves server-provided paging order when derived roster filters are disabled", () => {
     const rows = buildStudentRows(
       [
