@@ -91,6 +91,25 @@ export function validateReleaseCandidateWorkflow(source) {
     );
   }
 
+  const frontendBlock = jobBlock(source, "frontend") ?? "";
+  const lock = JSON.parse(fs.readFileSync(new URL("../frontend/package-lock.json", import.meta.url), "utf8"));
+  const playwrightVersion = lock.packages["node_modules/playwright-core"].version;
+  const frontendControls = [
+    `image: mcr.microsoft.com/playwright:v${playwrightVersion}-noble`,
+    "options: --init --ipc=host",
+    "shell: bash",
+    `test "$(node -p "require('./package-lock.json').packages['node_modules/playwright-core'].version")" = ${playwrightVersion}`,
+    `test "$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")" = ${playwrightVersion}`,
+    "run: npm ci",
+    'npm_config_fetch_retries: "2"',
+    'npm_config_fetch_retry_mintimeout: "10000"',
+    'npm_config_fetch_retry_maxtimeout: "20000"',
+    "npm_config_loglevel: http",
+  ];
+  for (const control of frontendControls) {
+    if (!frontendBlock.includes(control)) errors.push(`Frontend runtime missing control: ${control}`);
+  }
+
   const aggregateBlock = source.slice(source.indexOf("  release-candidate:"));
   if (!aggregateBlock.includes("    if: ${{ always() }}")) {
     errors.push(
