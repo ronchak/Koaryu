@@ -176,6 +176,11 @@ function sessionMatchesTemplate(session: ClassSession, template: ClassTemplate) 
     return session.template_id === template.id;
   }
 
+  // A known program mismatch rules out the legacy match. A missing ID does not.
+  if (session.program_id && template.program_id && session.program_id !== template.program_id) {
+    return false;
+  }
+
   // Only unlinked legacy sessions need the name/time fallback. A linked session
   // must not hide another recurring series that happens to share its details.
   return (
