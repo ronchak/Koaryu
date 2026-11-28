@@ -1,8 +1,10 @@
 import asyncio
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import httpx
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.services.release_schema_readiness import (
@@ -13,8 +15,20 @@ from app.services.release_schema_readiness import (
     HostedReleaseReadinessCache,
     ReleaseSchemaNotReadyError,
     assert_hosted_release_schema_ready,
+    is_transient_readiness_error,
     validate_release_schema_preflight,
 )
+
+READINESS_LOGGER = "app.services.release_schema_readiness"
+
+
+def statement_timeout():
+    return PostgrestAPIError(
+        {
+            "code": "57014",
+            "message": "canceling statement due to statement timeout",
+        }
+    )
 
 
 def exact_preflight_row():
@@ -381,6 +395,298 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
                 loop.set_exception_handler(previous_handler)
 
         asyncio.run(exercise_cancelled_failure())
+
+
+class TransientReadinessGraceTest(unittest.TestCase):
+    """A proven-ready process survives a short window with no readiness answer."""
+
+    def make_cache(self, outcomes, now, **kwargs):
+        calls = []
+
+        def check():
+            calls.append(now[0])
+            outcome = outcomes.pop(0)
+            if outcome is not None:
+                raise outcome
+
+        async def run_check(blocking_check):
+            blocking_check()
+
+        cache = HostedReleaseReadinessCache(
+            check=check,
+            monotonic=lambda: now[0],
+            run_check=run_check,
+            success_ttl_seconds=30.0,
+            transient_grace_seconds=180.0,
+            **kwargs,
+        )
+        return cache, calls
+
+    def test_classification_admits_only_failures_without_an_answer(self):
+        request = httpx.Request("POST", "https://example.invalid/rest/v1/rpc/x")
+        transient = [
+            statement_timeout(),
+            PostgrestAPIError({"code": "55P03", "message": "lock timeout"}),
+            PostgrestAPIError({"code": "PGRST000", "message": "could not connect"}),
+            PostgrestAPIError({"code": "PGRST002", "message": "schema cache"}),
+            PostgrestAPIError({"code": "PGRST003", "message": "pool timeout"}),
+            # A non-JSON gateway response carries the integer HTTP status.
+            PostgrestAPIError({"code": 504, "message": "JSON could not be generated"}),
+            TimeoutError(),
+            httpx.ReadTimeout("read timed out", request=request),
+            httpx.ConnectError("connection refused", request=request),
+            httpx.RemoteProtocolError("server disconnected", request=request),
+        ]
+        definite = [
+            ReleaseSchemaNotReadyError("Release schema preflight did not match exact head."),
+            RuntimeError("Supabase RPC x is required. Apply the database migrations"),
+            PostgrestAPIError({"code": "PGRST202", "message": "Could not find the function"}),
+            PostgrestAPIError({"code": "42501", "message": "permission denied"}),
+            PostgrestAPIError({"code": "PGRST301", "message": "JWT expired"}),
+            PostgrestAPIError({"code": 500, "message": "JSON could not be generated"}),
+            PostgrestAPIError({"message": "no code"}),
+            httpx.UnsupportedProtocol("bad scheme", request=request),
+            ValueError("unexpected"),
+        ]
+        for exc in transient:
+            with self.subTest(exc=repr(exc)):
+                self.assertTrue(is_transient_readiness_error(exc))
+        for exc in definite:
+            with self.subTest(exc=repr(exc)):
+                self.assertFalse(is_transient_readiness_error(exc))
+
+    def test_timeout_after_recent_success_serves_ready_and_logs(self):
+        now = [10.0]
+        cache, calls = self.make_cache([None, statement_timeout()], now)
+        asyncio.run(cache.assert_ready())
+
+        now[0] = 55.0
+        with self.assertLogs(READINESS_LOGGER, level="WARNING") as logs:
+            asyncio.run(cache.assert_ready())
+
+        self.assertEqual(calls, [10.0, 55.0])
+        self.assertEqual(len(logs.records), 1)
+        message = logs.records[0].getMessage()
+        self.assertIn("APIError 57014", message)
+        self.assertIn("last success 45.0s ago", message)
+        self.assertIn("180s allowed", message)
+
+    def test_timeout_without_any_prior_success_fails_closed(self):
+        now = [10.0]
+        cache, _calls = self.make_cache([statement_timeout()], now)
+        with self.assertRaises(PostgrestAPIError):
+            asyncio.run(cache.assert_ready())
+
+    def test_timeout_after_the_grace_window_fails_closed(self):
+        now = [10.0]
+        cache, _calls = self.make_cache(
+            [None, statement_timeout(), statement_timeout()],
+            now,
+        )
+        asyncio.run(cache.assert_ready())
+
+        now[0] = 189.9
+        asyncio.run(cache.assert_ready())
+
+        now[0] = 190.0
+        with self.assertRaises(PostgrestAPIError):
+            asyncio.run(cache.assert_ready())
+
+    def test_definite_not_ready_during_grace_wins_and_is_not_masked_later(self):
+        now = [10.0]
+        cache, _calls = self.make_cache(
+            [
+                None,
+                statement_timeout(),
+                ReleaseSchemaNotReadyError("wrong head"),
+                statement_timeout(),
+            ],
+            now,
+        )
+        asyncio.run(cache.assert_ready())
+        now[0] = 45.0
+        asyncio.run(cache.assert_ready())
+
+        now[0] = 50.0
+        with self.assertRaisesRegex(ReleaseSchemaNotReadyError, "wrong head"):
+            asyncio.run(cache.assert_ready())
+
+        now[0] = 55.0
+        with self.assertRaises(PostgrestAPIError):
+            asyncio.run(cache.assert_ready())
+
+    def test_unrecognized_failure_fails_closed_and_clears_grace(self):
+        now = [10.0]
+        cache, _calls = self.make_cache(
+            [None, ValueError("unexpected"), statement_timeout()],
+            now,
+        )
+        asyncio.run(cache.assert_ready())
+        now[0] = 45.0
+        with self.assertRaises(ValueError):
+            asyncio.run(cache.assert_ready())
+        now[0] = 50.0
+        with self.assertRaises(PostgrestAPIError):
+            asyncio.run(cache.assert_ready())
+
+    def test_success_after_grace_expiry_restarts_the_grace(self):
+        now = [10.0]
+        cache, _calls = self.make_cache(
+            [None, statement_timeout(), None, statement_timeout()],
+            now,
+        )
+        asyncio.run(cache.assert_ready())
+
+        now[0] = 200.0
+        with self.assertRaises(PostgrestAPIError):
+            asyncio.run(cache.assert_ready())
+
+        now[0] = 201.0
+        asyncio.run(cache.assert_ready())
+
+        now[0] = 240.0
+        asyncio.run(cache.assert_ready())
+
+    def test_concurrent_probes_during_grace_share_one_check(self):
+        async def exercise():
+            now = [10.0]
+            check_started = asyncio.Event()
+            release_check = asyncio.Event()
+            runner_calls = []
+            outcomes = [None, statement_timeout()]
+
+            async def run_check(_blocking_check):
+                runner_calls.append(now[0])
+                outcome = outcomes.pop(0)
+                if outcome is None:
+                    return
+                check_started.set()
+                await release_check.wait()
+                raise outcome
+
+            cache = HostedReleaseReadinessCache(
+                check=lambda: None,
+                monotonic=lambda: now[0],
+                run_check=run_check,
+            )
+            await cache.assert_ready()
+
+            now[0] = 60.0
+            with self.assertLogs(READINESS_LOGGER, level="WARNING") as logs:
+                tasks = [asyncio.create_task(cache.assert_ready()) for _ in range(8)]
+                await asyncio.wait_for(check_started.wait(), timeout=2)
+                await asyncio.sleep(0)
+                release_check.set()
+                await asyncio.wait_for(asyncio.gather(*tasks), timeout=2)
+
+            self.assertEqual(runner_calls, [10.0, 60.0])
+            self.assertEqual(len(logs.records), 8)
+
+        asyncio.run(exercise())
+
+    def test_hung_preflight_answers_within_the_probe_budget(self):
+        async def exercise():
+            now = [10.0]
+            release_check = asyncio.Event()
+            runner_calls = []
+            late_outcome = []
+
+            async def run_check(_blocking_check):
+                runner_calls.append(now[0])
+                if len(runner_calls) == 1:
+                    return
+                await release_check.wait()
+                if late_outcome:
+                    raise late_outcome[0]
+
+            cache = HostedReleaseReadinessCache(
+                check=lambda: None,
+                monotonic=lambda: now[0],
+                run_check=run_check,
+                probe_budget_seconds=0.05,
+            )
+            await cache.assert_ready()
+
+            # Within grace the probe returns ready on its budget, not the RPC's.
+            now[0] = 60.0
+            started = time.monotonic()
+            with self.assertLogs(READINESS_LOGGER, level="WARNING") as logs:
+                await asyncio.wait_for(cache.assert_ready(), timeout=2)
+                await asyncio.wait_for(cache.assert_ready(), timeout=2)
+            self.assertLess(time.monotonic() - started, 1.0)
+            self.assertIn("TimeoutError", logs.records[0].getMessage())
+            # Both probes joined the one hung check instead of starting more.
+            self.assertEqual(runner_calls, [10.0, 60.0])
+
+            # The hung check finally returns a definite not-ready after every
+            # waiter gave up. The shared task still records it.
+            late_outcome.append(ReleaseSchemaNotReadyError("wrong head"))
+            release_check.set()
+            for _ in range(5):
+                await asyncio.sleep(0)
+            self.assertIsNone(cache._inflight)
+
+            # A new hung check now has no grace and fails closed on budget.
+            release_check.clear()
+            late_outcome.clear()
+            now[0] = 70.0
+            started = time.monotonic()
+            with self.assertRaises(TimeoutError):
+                await asyncio.wait_for(cache.assert_ready(), timeout=2)
+            self.assertLess(time.monotonic() - started, 1.0)
+            release_check.set()
+
+        asyncio.run(exercise())
+
+    def test_hung_preflight_on_a_fresh_process_fails_closed_within_budget(self):
+        async def exercise():
+            never = asyncio.Event()
+
+            async def run_check(_blocking_check):
+                await never.wait()
+
+            cache = HostedReleaseReadinessCache(
+                check=lambda: None,
+                run_check=run_check,
+                probe_budget_seconds=0.05,
+            )
+            started = time.monotonic()
+            with self.assertRaises(TimeoutError):
+                await asyncio.wait_for(cache.assert_ready(), timeout=2)
+            self.assertLess(time.monotonic() - started, 1.0)
+            never.set()
+
+        asyncio.run(exercise())
+
+    def test_late_success_after_budget_is_recorded_for_the_next_probe(self):
+        async def exercise():
+            release_check = asyncio.Event()
+            runner_calls = []
+
+            async def run_check(_blocking_check):
+                runner_calls.append("runner")
+                await release_check.wait()
+
+            cache = HostedReleaseReadinessCache(
+                check=lambda: None,
+                run_check=run_check,
+                probe_budget_seconds=0.05,
+            )
+            with self.assertRaises(TimeoutError):
+                await cache.assert_ready()
+            release_check.set()
+            for _ in range(5):
+                await asyncio.sleep(0)
+            await cache.assert_ready()
+            self.assertEqual(runner_calls, ["runner"])
+
+        asyncio.run(exercise())
+
+    def test_grace_cannot_be_configured_shorter_than_the_success_ttl(self):
+        with self.assertRaises(ValueError):
+            HostedReleaseReadinessCache(success_ttl_seconds=30.0, transient_grace_seconds=10.0)
+        with self.assertRaises(ValueError):
+            HostedReleaseReadinessCache(probe_budget_seconds=0)
 
 
 if __name__ == "__main__":
