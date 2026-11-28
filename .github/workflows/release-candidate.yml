@@ -88,18 +88,27 @@ jobs:
 
   frontend:
     name: Frontend tests, lint, build, and audit
-    # Playwright 1.60's Chromium dependencies support Ubuntu 24.04, not 26.04.
     runs-on: ubuntu-24.04
+    # Browsers and OS dependencies ship together; keep this equal to the lockfile.
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948
+      options: --init --ipc=host
     timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
+        shell: bash
 
     steps:
       - name: Check out exact candidate head
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      # The image runs as root while the runner user owns the workspace; checkout
+      # registers the workspace only in its own temporary HOME.
+      - name: Trust the checked-out workspace inside the container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Assert exact candidate head
         env:
@@ -113,14 +122,16 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Assert Playwright image matches the locked browser version
+        run: |
+          test "$(node -p "require('./package-lock.json').packages['node_modules/playwright-core'].version")" = 1.60.0
+          test "$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")" = 1.60.0
+
       - name: Install frontend dependencies
         run: npm ci
 
       - name: Verify frontend formatting
         run: npm run format:check
-
-      - name: Install Chromium for mounted lifecycle tests
-        run: npx playwright install --with-deps chromium
 
       - name: Run frontend tests
         run: npm test

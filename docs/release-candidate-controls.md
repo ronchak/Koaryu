@@ -55,9 +55,15 @@ backend tests, dependency/audit/API contracts; database checks; the deterministi
 Home performance gate; secret scanning and static analysis. Inspect the workflow
 for its exact commands instead of maintaining a second inventory here.
 
-The frontend job pins Ubuntu 24.04 because the locked Playwright 1.60 browser
-installer rejects Ubuntu 26.04. Keep that runner compatible with the installed
-browser tooling when updating either; all frontend checks still run.
+The frontend job runs in the official Playwright `v1.60.0-noble` container, pinned
+by digest, with Chromium and its Ubuntu 24.04 runtime dependencies already installed.
+It replaces the network-dependent `playwright install --with-deps` step, which took
+from 20 seconds to 14 minutes and timed the job out. A pre-install assertion fails
+unless both locked Playwright packages match the image version; update the image
+tag, digest and assertion together when the lockfile changes. The image runs as
+root, so one step marks the checked-out workspace as a safe Git directory before
+the exact-head assertion. Node stays pinned, `npm ci` still installs the lockfile,
+and every frontend test, lint, build and audit command still runs unchanged.
 
 For release-process or workflow edits, run `npm run check:release-workflow`.
 Use [the verification matrix](pr-verification-matrix.md) for other local checks and

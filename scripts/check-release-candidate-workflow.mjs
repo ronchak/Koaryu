@@ -91,6 +91,27 @@ export function validateReleaseCandidateWorkflow(source) {
     );
   }
 
+  const frontendBlock = jobBlock(source, "frontend") ?? "";
+  const lock = JSON.parse(fs.readFileSync(new URL("../frontend/package-lock.json", import.meta.url), "utf8"));
+  const playwrightVersion = lock.packages["node_modules/playwright-core"].version;
+  const frontendControls = [
+    'run: git config --global --add safe.directory "$GITHUB_WORKSPACE"',
+    "options: --init --ipc=host",
+    "shell: bash",
+    `test "$(node -p "require('./package-lock.json').packages['node_modules/playwright-core'].version")" = ${playwrightVersion}`,
+    `test "$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")" = ${playwrightVersion}`,
+    "run: npm ci",
+  ];
+  for (const control of frontendControls) {
+    if (!frontendBlock.includes(control)) errors.push(`Frontend runtime missing control: ${control}`);
+  }
+  // The image is bound to the locked Playwright version and to an immutable digest.
+  const image = `image: mcr.microsoft.com/playwright:v${playwrightVersion}-noble@sha256:`;
+  const imageAt = frontendBlock.indexOf(image);
+  if (imageAt < 0 || !/^[0-9a-f]{64}\n/.test(frontendBlock.slice(imageAt + image.length))) {
+    errors.push(`Frontend runtime missing control: ${image}<64-hex digest>`);
+  }
+
   const aggregateBlock = source.slice(source.indexOf("  release-candidate:"));
   if (!aggregateBlock.includes("    if: ${{ always() }}")) {
     errors.push(
