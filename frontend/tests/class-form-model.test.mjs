@@ -119,4 +119,34 @@ describe("class form model", () => {
       },
     );
   });
+
+  it("requires a selected weekday in a bounded weekly series", () => {
+    const weekly = {
+      ...buildClassFormInitialState({ mode: "weekly" }),
+      name: "Friday Fundamentals",
+      dayOfWeek: 5,
+      startDate: "2026-12-30",
+      endDate: "2026-12-31",
+    };
+
+    assert.deepEqual(buildClassFormSubmitDecision(weekly), {
+      errors: { endDate: "End date must include at least one Friday." },
+    });
+
+    for (const endDate of ["2027-01-01", "2027-01-07", ""]) {
+      assert.equal(
+        buildClassFormSubmitDecision({ ...weekly, endDate }).payload?.kind,
+        "weekly_template",
+      );
+    }
+    assert.equal(
+      buildClassFormSubmitDecision({ ...weekly, startDate: "2027-01-01", endDate: "2027-01-01" })
+        .payload?.kind,
+      "weekly_template",
+    );
+    assert.equal(
+      buildClassFormSubmitDecision({ ...weekly, endDate: "2026-12-29" }).errors.endDate,
+      "End date cannot be before the series start date.",
+    );
+  });
 });

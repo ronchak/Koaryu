@@ -220,8 +220,17 @@ export function buildClassFormSubmitDecision(form: ClassFormState): ClassFormSub
       errors.dayOfWeek = "Choose the weekday for this series.";
     }
     if (!form.startDate) errors.startDate = "Choose when the series can begin.";
-    if (form.endDate && form.startDate && form.endDate < form.startDate) {
-      errors.endDate = "End date cannot be before the series start date.";
+    if (form.endDate && form.startDate) {
+      if (form.endDate < form.startDate) {
+        errors.endDate = "End date cannot be before the series start date.";
+      } else if (!errors.dayOfWeek) {
+        const first = new Date(`${form.startDate}T00:00:00Z`);
+        const daysUntilFirst = (form.dayOfWeek - first.getUTCDay() + 7) % 7;
+        first.setUTCDate(first.getUTCDate() + daysUntilFirst);
+        if (first.getTime() > Date.parse(`${form.endDate}T00:00:00Z`)) {
+          errors.endDate = `End date must include at least one ${FULL_DAY_NAMES[form.dayOfWeek]}.`;
+        }
+      }
     }
   }
 

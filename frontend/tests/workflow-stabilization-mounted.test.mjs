@@ -1924,6 +1924,51 @@ test("a sign-out during the post-create materialization neither replays nor repo
   }
 });
 
+test("a weekly form blocks a date range with no class and accepts a corrected weekday", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/schedule",
+      scheduleController: true,
+      scheduleForm: true,
+    });
+    await mountCountedSchedule(page);
+    await page.evaluate(() => fixture.controller.onOpenAddClass());
+    const dialog = page.getByRole("dialog", { name: "Add class" });
+    await dialog.getByLabel("Class name *").fill("Synthetic Weekly");
+    const weekday = dialog.getByLabel("Weekday *");
+    await weekday.selectOption("5");
+    await dialog.getByLabel("Series start date *").fill("2026-12-30");
+    const endDate = dialog.getByLabel("Template end date");
+    await endDate.fill("2026-12-31");
+    const submit = dialog.getByRole("button", { name: "Create weekly template" });
+    await submit.click();
+    const error = dialog.getByText("End date must include at least one Friday.");
+    await error.waitFor();
+    assert.equal(await endDate.getAttribute("aria-invalid"), "true");
+    assert.equal(
+      await page.evaluate(
+        () => fixture.writes.filter((w) => w.path === "/schedule/templates").length,
+      ),
+      0,
+    );
+
+    await weekday.selectOption("4");
+    await error.waitFor({ state: "detached" });
+    await submit.click();
+    await page.waitForFunction(() => fixture.writes.some((w) => w.path === "/schedule/templates"));
+    assert.equal(
+      await page.evaluate(
+        () => fixture.writes.filter((w) => w.path === "/schedule/templates").length,
+      ),
+      1,
+    );
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
 test("a pending recurring class cannot be submitted twice, and its confirmed form is gone", async () => {
   const browser = await chromium.launch();
   try {
