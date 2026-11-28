@@ -362,7 +362,9 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
                 label="Weekday *"
                 value={String(form.dayOfWeek)}
                 disabled={isLoading}
-                onChange={(value) => patchForm({ dayOfWeek: Number(value) }, ["dayOfWeek"])}
+                onChange={(value) =>
+                  patchForm({ dayOfWeek: Number(value) }, ["dayOfWeek", "endDate"])
+                }
                 options={FULL_DAY_NAMES.map((day, index) => ({ value: String(index), label: day }))}
                 error={getFieldError("dayOfWeek")}
               />

@@ -97,6 +97,39 @@ describe("schedule template identity", () => {
     }
   });
 
+  it("does not let an unlinked class hide a recurring slot for a different known program", () => {
+    const sessions = [session({ template_id: null, program_id: "kids-karate" })];
+    const templates = [
+      template("adult-series"),
+      template("kids-series", { program_id: "kids-karate" }),
+    ];
+
+    assert.deepEqual(placeholders(sessions, templates), ["adult-series"]);
+    for (const view of ["month", "week", "day"]) {
+      assert.deepEqual(
+        getVisibleScheduleSummary({ currentDate: date, view, sessions, templates }),
+        {
+          scheduled: 1,
+          recurringSlots: 1,
+        },
+      );
+    }
+  });
+
+  it("still matches an unlinked class when one program ID is missing", () => {
+    assert.deepEqual(
+      placeholders([session({ template_id: null, program_id: null })], [template("series-a")]),
+      [],
+    );
+    assert.deepEqual(
+      placeholders(
+        [session({ template_id: null })],
+        [template("series-a", { program_id: undefined })],
+      ),
+      [],
+    );
+  });
+
   it("keeps an unrelated linked session from hiding a template outside the loaded series set", () => {
     assert.deepEqual(placeholders([session()], [template("series-b")]), ["series-b"]);
   });
