@@ -432,7 +432,6 @@ DO $$
 DECLARE x JSONB; y JSONB; packet JSONB; result JSONB; at TIMESTAMPTZ;
     starts TIMESTAMPTZ; s UUID; w UUID; v UUID; epoch BIGINT; last UUID; expected UUID;
     idx INTEGER; count_pairs INTEGER; chosen UUID[]; metadata RECORD; old JSONB; malformed JSONB; item JSONB;
-    probe_event UUID; probe_recipients JSONB;
 BEGIN
     SELECT reference_at,starts_at,last_fixture INTO STRICT at,starts,x FROM pg_temp.timed_backlog_setup_context WHERE singleton;
     SELECT t.studio_id,t.workflow_id,t.version_id,t.epoch INTO s,w,v,epoch FROM private.workflow_timer_activations t ORDER BY t.studio_id,t.activation_id LIMIT 1;
@@ -517,17 +516,49 @@ BEGIN
     PERFORM pg_temp.timed_check((SELECT count(*)=36 FROM pg_temp.timed_belt_seen),'recipient continuation beyond 25 and equal parent coordinate');
     SET LOCAL enable_seqscan=off;
     SELECT id INTO last FROM public.belt_test_recipients WHERE studio_id=(x->>'studio')::UUID AND state='approved' ORDER BY id OFFSET 10 LIMIT 1;
-    -- Give the event-qualified seek a representative same-studio distribution.
-    SELECT jsonb_agg(jsonb_build_object('student_id',student_id,'student_program_membership_id',student_program_membership_id))
-        INTO probe_recipients FROM public.belt_test_recipients
-        WHERE studio_id=(x->>'studio')::UUID AND event_id=(x->>'parent')::UUID AND state='approved';
+    -- Keep unrelated events just beyond the cursor so a broad id scan must
+    -- discard them. These synthetic plan-only rows roll back with the prefix.
     BEGIN
-        FOR idx IN 1..4 LOOP
-            probe_event:=(public.mutate_belt_test_event_v1((x->>'studio')::UUID,(x->>'actor')::UUID,NULL,gen_random_uuid(),NULL,
-                jsonb_build_object('name','Sibling seek probe','ladder_id',x->'ladder','starts_at',private.automation_utc_text_v1(starts),
-                    'ends_at',private.automation_utc_text_v1(starts+INTERVAL '1 hour'),'timezone','UTC','status','scheduled'))#>>'{payload,id}')::UUID;
-            PERFORM public.approve_belt_test_recipients_v1((x->>'studio')::UUID,(x->>'actor')::UUID,probe_event,gen_random_uuid(),1,probe_recipients);
-        END LOOP;
+        WITH probe_events AS (
+            INSERT INTO public.belt_test_events(id,studio_id,name,ladder_id,starts_at,ends_at,timezone,status)
+                SELECT (substr(last::TEXT,1,14)||'fff1-0000-'||lpad(to_hex(n),12,'0'))::UUID,
+                    (x->>'studio')::UUID,'Sibling seek probe',(x->>'ladder')::UUID,
+                    starts,starts+INTERVAL '1 hour','UTC','scheduled'
+                FROM generate_series(1,32) n RETURNING id),
+        original_recipients AS (
+            SELECT r.*,row_number() OVER (ORDER BY r.id) AS ordinal FROM public.belt_test_recipients r
+                WHERE r.studio_id=(x->>'studio')::UUID AND r.event_id=(x->>'parent')::UUID AND r.state='approved')
+        INSERT INTO public.belt_test_recipients(id,studio_id,event_id,student_id,student_program_membership_id,
+            approved_schedule_revision,approved_program_id,approved_rank_context_generation,approved_current_rank_id,
+            approved_target_rank_id,state,approved_by,approved_at)
+            SELECT (substr(last::TEXT,1,14)||'ffff-'||substr(e.id::TEXT,33,4)||'-'||lpad(to_hex(r.ordinal),12,'0'))::UUID,
+                r.studio_id,e.id,r.student_id,r.student_program_membership_id,r.approved_schedule_revision,r.approved_program_id,
+                r.approved_rank_context_generation,r.approved_current_rank_id,r.approved_target_rank_id,
+                r.state,r.approved_by,r.approved_at
+            FROM probe_events e CROSS JOIN original_recipients r;
+        GET DIAGNOSTICS idx=ROW_COUNT;
+        PERFORM pg_temp.timed_check(idx=1152,'32 sibling events each have 36 seek-probe recipients');
+        -- A deterministic earlier prefix makes event-only bitmap scans discard
+        -- historical rows, while the timer index seeks directly to the cursor.
+        -- Accepted recipient UUIDs are v4; the synthetic 0000 group sorts before
+        -- the cursor's 4xxx group while keeping its first two groups unchanged.
+        WITH probe_students AS (
+            INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,status,program_id,membership_start_date)
+                SELECT (substr(last::TEXT,1,14)||'0001-0000-'||lpad(to_hex(n),12,'0'))::UUID,
+                    (x->>'studio')::UUID,'Recipient','Earlier seek prefix','active',(x->>'program')::UUID,CURRENT_DATE-100
+                FROM generate_series(1,200) n RETURNING id)
+        INSERT INTO public.belt_test_recipients(id,studio_id,event_id,student_id,student_program_membership_id,
+            approved_schedule_revision,approved_program_id,approved_rank_context_generation,approved_current_rank_id,
+            approved_target_rank_id,state,approved_by,approved_at)
+            SELECT (substr(last::TEXT,1,14)||'0000-0000-'||right(s.id::TEXT,12))::UUID,
+                r.studio_id,r.event_id,s.id,NULL,r.approved_schedule_revision,r.approved_program_id,
+                r.approved_rank_context_generation,r.approved_current_rank_id,r.approved_target_rank_id,
+                r.state,r.approved_by,r.approved_at
+            FROM probe_students s CROSS JOIN public.belt_test_recipients r WHERE r.id=last;
+        GET DIAGNOSTICS idx=ROW_COUNT;
+        PERFORM pg_temp.timed_check(idx=200 AND
+            (substr(last::TEXT,1,14)||'0000-0000-'||lpad(to_hex(200),12,'0'))::UUID<last,
+            '200 deterministic recipients precede the seek cursor');
         ANALYZE public.belt_test_recipients;
         EXECUTE format('EXPLAIN (ANALYZE,COSTS OFF,FORMAT JSON) SELECT r.id FROM public.belt_test_recipients r WHERE r.studio_id=%L AND r.event_id=%L
             AND r.state=''approved'' AND r.id>%L ORDER BY r.id LIMIT 25',x->>'studio',x->>'parent',last) INTO result;
@@ -535,9 +566,17 @@ BEGIN
     EXCEPTION WHEN SQLSTATE 'P57T3' THEN NULL;
     END;
     INSERT INTO pg_temp.timed_plans VALUES('recipient typed seek with small-fixture seqscan disabled',result);
-    PERFORM pg_temp.timed_check(result::TEXT LIKE '%belt_test_recipients_timer_scan%' AND result::TEXT LIKE '%Index Cond%','recipient indexed seek');
+    PERFORM pg_temp.timed_check(EXISTS(
+        SELECT 1 FROM jsonb_path_query(result,'$[0].Plan.**') AS p(node)
+        WHERE node->>'Index Name'='belt_test_recipients_timer_scan'
+            AND node->>'Index Cond' LIKE '%(studio_id = %'
+            AND node->>'Index Cond' LIKE '%(event_id = %'
+            AND node->>'Index Cond' LIKE '%(id > %')
+        AND result::TEXT NOT LIKE '%Rows Removed by Filter%',
+        'recipient indexed seek; actual plan: '||result::TEXT);
     PERFORM pg_temp.timed_check((SELECT count(*)=36 FROM public.belt_test_recipients WHERE studio_id=(x->>'studio')::UUID)
-        AND (SELECT count(*)=1 FROM public.belt_test_events WHERE studio_id=(x->>'studio')::UUID),'recipient seek probe siblings roll back exactly');
+        AND (SELECT count(*)=1 FROM public.belt_test_events WHERE studio_id=(x->>'studio')::UUID)
+        AND (SELECT count(*)=36 FROM public.students WHERE studio_id=(x->>'studio')::UUID),'recipient seek probe rows roll back exactly');
     SET LOCAL enable_seqscan=on;
     FOR idx IN 1..4 LOOP PERFORM pg_temp.timed_workflow(x,'belt_test.upcoming'); END LOOP;
     UPDATE private.workflow_timer_activations SET last_threshold_at=NULL,last_event_id=NULL,last_source_id=NULL WHERE studio_id=(x->>'studio')::UUID;
