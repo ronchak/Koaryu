@@ -291,6 +291,52 @@ test("a parsed structure that disappears is reported instead of skipping its rul
   assertReported(result, "scripts/studio-comp-migration-rollout.mjs", 1, /expected structure not found: const ONE_MIGRATION_PREDECESSORS/);
 });
 
+// Fail-closed: each parsed file is required, so deleting or renaming one is a
+// finding rather than zero findings.
+const PARSED_FILES = [
+  "scripts/local_postgres_verification.py",
+  "scripts/verify-supabase-contracts-local.sh",
+  "scripts/release-attestation/preflight.mjs",
+  "scripts/studio-comp-migration-rollout.mjs",
+];
+for (const file of PARSED_FILES) {
+  test(`deleting required parse target ${file} is reported`, () => {
+    const result = checkReleaseInventory(overlaySource(repository, { [file]: null }));
+    assertReported(result, file, 1, /required file is missing or renamed/);
+  });
+  test(`renaming required parse target ${file} is reported`, () => {
+    const renamed = file.replace(/(\.[a-z]+)$/, "-renamed$1");
+    const result = checkReleaseInventory(overlaySource(repository, { [file]: null, [renamed]: repository.read(file) }));
+    assert.ok(result.findings.some(finding => finding.file === file && finding.line === 1
+      && /required file is missing or renamed/.test(finding.stale)), formatFindings(result));
+  });
+}
+
+// Each preflight list anchor is required on its own; the other list still
+// existing must not hide a renamed one.
+const PREFLIGHT_ANCHORS = [
+  { name: "UTC/ISO settings list", from: 'if (["v57", "v58", "v59", "v60", "v61"].includes(state.id)) {',
+    to: 'if (new Set(["v57", "v58", "v59", "v60", "v61"]).has(state.id)) {', structure: /UTC\/ISO session settings/ },
+  { name: "blank-line normalization list", from: 'return ["v52", "v53", "v56", "v57", "v58", "v59", "v60", "v61"].includes(state.id) ? rendered',
+    to: 'return new Set(["v52", "v53", "v56", "v57", "v58", "v59", "v60", "v61"]).has(state.id) ? rendered', structure: /blank-line normalization/ },
+];
+for (const anchor of PREFLIGHT_ANCHORS) {
+  test(`renaming the preflight ${anchor.name} alone is reported`, () => {
+    const { result } = mutate("scripts/release-attestation/preflight.mjs", text => text.replace(anchor.from, anchor.to));
+    assertReported(result, "scripts/release-attestation/preflight.mjs", 1, /expected structure not found/);
+    assert.equal(result.findings.length, 1, formatFindings(result));
+    assert.match(result.findings[0].stale, anchor.structure);
+  });
+}
+
+test("a missing declaration stops the check instead of reporting zero", () => {
+  for (const file of ["scripts/release-attestation/release-states.json", "scripts/release-attestation/preflight-schema.json",
+    "scripts/release-attestation/python-restore-schema.json"]) {
+    assert.throws(() => checkReleaseInventory(overlaySource(repository, { [file]: null })),
+      new RegExp(`${file.replaceAll(".", "\\.")}: required declaration is missing`));
+  }
+});
+
 test("a migration without a declared release identity is reported on the declaration", () => {
   const result = checkReleaseInventory(overlaySource(repository, {
     "supabase/migrations/20991231000000_undeclared_v62.sql": "-- undeclared\n",
@@ -303,7 +349,7 @@ test("a migration without a declared release identity is reported on the declara
   assert.match(result.findings[1].stale, /migration count pinned to 156/);
 });
 
-test("forward dry run: declaring V62 lists every hand-edited derivable pin in one pass", () => {
+test("forward dry run: declaring V62 lists the files holding hand-edited derivable pins in one pass", () => {
   const declarations = JSON.parse(repository.read("scripts/release-attestation/release-states.json"));
   declarations.identities.push(["v62", "20991231000000", 43, 62]);
   declarations.current = "v62";

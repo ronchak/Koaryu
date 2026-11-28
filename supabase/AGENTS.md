@@ -20,10 +20,12 @@ generated `.temp/` state.
   Use the shared generator for declarations, not manual edits to generated files.
   See [attestation authoring](../scripts/release-attestation/README.md).
 - After declaring a new release in `release-states.json`, run
-  `npm run check:release-inventory`. In about a second it lists every stale
-  current-release pin (installers and their callers, history-exact contract arms,
-  runner dispatch, rollout chain, preflight lists, version asserts), each with its
-  file, line and the expected edit. `npm run generate:release-attestation -- --write`
+  `npm run check:release-inventory`. It works per file: it reports a file that
+  names the previous release without the current one, plus the structures it
+  parses (installers and their callers, runner count and reachability, rollout
+  chain, preflight lists, `CURRENT_RELEASE` asserts), each with file, line and
+  the expected edit. A file that mentions the current release anywhere can still
+  hold a stale pin, so the existing suites remain the proof. `npm run generate:release-attestation -- --write`
   rewrites the generated history/readiness modules and restore scripts in place.
 
 ## Verification

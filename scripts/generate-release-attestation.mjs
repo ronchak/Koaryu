@@ -180,8 +180,9 @@ function restoreArtifacts(filenames, versions) {
   };
 }
 
-// Modes Git records for tracked files (index entries). The working-tree mode
-// depends on the local umask; Git stores only 644 or 755, which CI checks out.
+// Full index modes (git ls-files -s) of tracked files under scripts/, for
+// example 0o100755, or 0o120000 for a staged symlink. Git records only 100644
+// or 100755 for a regular file; the working-tree mode also depends on umask.
 export function trackedModes(repositoryRoot = root) {
   try {
     const top = execFileSync("git", ["rev-parse", "--show-toplevel"],
@@ -191,25 +192,66 @@ export function trackedModes(repositoryRoot = root) {
       { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 16 << 20 });
     return new Map(entries.split("\0").filter(Boolean).map(entry => {
       const [metadata, file] = entry.split("\t");
-      return [file, Number.parseInt(metadata.split(" ")[0], 8) & 0o777];
+      return [file, Number.parseInt(metadata.split(" ")[0], 8)];
     }));
   } catch {
     return new Map();
   }
 }
 
-// A tracked file must have the declared mode in Git and the matching
-// executable bit on disk; an untracked file keeps the exact stat comparison.
+const REGULAR_FILE = 0o100000;
+const FILE_TYPE = 0o170000;
+const octal = mode => mode.toString(8);
+
+// workingMode is the lstat mode (type and permission bits) of the working file.
+// Every attested path must be a regular file, never a symlink. A tracked file
+// needs all three: index mode 100644/100755 equal to the attested mode; owner
+// bits equal to the attested owner bits; and no group, other or special bit
+// the attested mode lacks. So a restrictive umask passes (0600/0640 for 644,
+// 0700/0750/0754 for 755) while 0777, 0775, 0757, 0666 or 0664 fail. An
+// untracked file keeps the exact comparison.
 export function modeMismatch(artifact, workingMode, tracked) {
-  const committed = tracked.get(artifact.source);
-  if (committed === undefined) {
-    return (workingMode & 0o777) === artifact.mode ? null : `${artifact.source}: mode ${(workingMode & 0o777).toString(8)} !== ${artifact.mode.toString(8)}`;
+  if ((workingMode & FILE_TYPE) !== REGULAR_FILE) {
+    return `${artifact.source}: working-tree entry is not a regular file (type ${octal(workingMode & FILE_TYPE)}); symlinks are rejected`;
   }
-  if (committed !== artifact.mode) return `${artifact.source}: committed mode ${committed.toString(8)} !== ${artifact.mode.toString(8)}`;
-  if (Boolean(workingMode & 0o100) !== Boolean(artifact.mode & 0o100)) {
-    return `${artifact.source}: working-tree executable bit differs from committed mode ${committed.toString(8)}`;
+  const permissions = workingMode & 0o7777;
+  const index = tracked.get(artifact.source);
+  if (index === undefined) {
+    return permissions === artifact.mode ? null : `${artifact.source}: mode ${octal(permissions)} !== ${octal(artifact.mode)}`;
+  }
+  if (index !== (REGULAR_FILE | artifact.mode)) {
+    return `${artifact.source}: index mode ${octal(index)} !== ${octal(REGULAR_FILE | artifact.mode)}`;
+  }
+  if ((permissions & 0o700) !== (artifact.mode & 0o700)) {
+    return `${artifact.source}: working-tree owner permissions ${octal(permissions & 0o700)} !== ${octal(artifact.mode & 0o700)}`;
+  }
+  const extra = permissions & 0o7077 & ~artifact.mode;
+  if (extra) {
+    return `${artifact.source}: working-tree mode ${octal(permissions)} adds permission bits ${octal(extra)} beyond ${octal(artifact.mode)}`;
   }
   return null;
+}
+
+// lstat, so a symlink at an attested path is judged as a symlink and never by
+// its target. A missing file throws ENOENT.
+export function workingModeMismatch(repositoryRoot, artifact, tracked) {
+  return modeMismatch(artifact, fs.lstatSync(path.join(repositoryRoot, artifact.source)).mode, tracked);
+}
+
+// --write targets must be regular files (or absent) whose real parent
+// directory lies inside the repository, so a symlinked file or directory can
+// never redirect a write or chmod outside the tree.
+export function writeDestination(repositoryRoot, source) {
+  const realRoot = fs.realpathSync(repositoryRoot);
+  const destination = path.join(realRoot, source);
+  const parent = fs.realpathSync(path.dirname(destination));
+  if (parent !== realRoot && !parent.startsWith(realRoot + path.sep)) {
+    throw new Error(`${source}: refusing to write outside the repository (parent resolves to ${parent})`);
+  }
+  let entry = null;
+  try { entry = fs.lstatSync(destination); } catch (error) { if (error.code !== "ENOENT") throw error; }
+  if (entry && !entry.isFile()) throw new Error(`${source}: refusing to write through a symlink or non-regular file`);
+  return destination;
 }
 
 export function main(argv = process.argv.slice(2)) {
@@ -246,9 +288,9 @@ export function main(argv = process.argv.slice(2)) {
     }
     const tracked = trackedModes();
     for (const artifact of restores.artifacts) {
-      assert.equal(artifact.text, fs.readFileSync(path.join(root, artifact.source), "utf8"), artifact.source);
-      const mismatch = modeMismatch(artifact, fs.statSync(path.join(root, artifact.source)).mode, tracked);
+      const mismatch = workingModeMismatch(root, artifact, tracked);
       if (mismatch) throw new Error(mismatch);
+      assert.equal(artifact.text, fs.readFileSync(path.join(root, artifact.source), "utf8"), artifact.source);
     }
     assert.equal(history, fs.readFileSync(path.join(root, "scripts/release-attestation/generated-history.mjs"), "utf8"), "Generated history is stale");
     assert.equal(readiness, fs.readFileSync(path.join(root, "scripts/release-attestation/generated-readiness.mjs"), "utf8"), "Generated readiness aliases are stale");
@@ -269,8 +311,11 @@ export function main(argv = process.argv.slice(2)) {
       { source: "scripts/release-attestation/generated-readiness.mjs", text: readiness },
       { source: "backend/app/services/generated_release_readiness.py", text: backendReadiness },
     ];
-    for (const artifact of [...restores.artifacts, ...modules]) {
-      const destination = path.join(root, artifact.source);
+    // Validate every destination before writing any, so a refusal leaves the
+    // tree unchanged.
+    const destinations = new Map([...restores.artifacts, ...modules]
+      .map(artifact => [artifact, writeDestination(root, artifact.source)]));
+    for (const [artifact, destination] of destinations) {
       const existing = fs.existsSync(destination) ? fs.readFileSync(destination, "utf8") : null;
       if (existing !== artifact.text) {
         fs.writeFileSync(destination, artifact.text, artifact.mode === undefined ? {} : { mode: artifact.mode });

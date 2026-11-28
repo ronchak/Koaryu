@@ -49,10 +49,15 @@ history proof reads outside `supabase/`, `scripts/` and the backend history inpu
 to the selector's history inputs; a selector test checks this for the replay loop.
 
 `npm run check:release-attestation` also runs `check:release-inventory`. It reads
-the current and previous release from `release-states.json` and lists in one pass
-every inventory that still names only the previous release, plus runner
-reachability (the history part reaches the newest restore, the former newest is
-gated with `part_enabled history`). It is offline, adds failures only, and keeps
+the current and previous release from `release-states.json` and works per file:
+it reports a scanned file that names the previous release (migration head,
+preflight RPC, manifest version, provider fingerprint) without the current one,
+plus the specific structures it parses: installers and their callers, runner
+count and reachability (the history part reaches the newest restore, the former
+newest is gated with `part_enabled history`), the two preflight rendering lists
+and the rollout chain. A missing parsed file or structure is a finding. A file
+that mentions the current release anywhere can still hold a stale pin, so the
+existing suites remain the proof. It is offline, adds failures only, and keeps
 its version-bound allowlist commented in the script.
 
 ## Required checks

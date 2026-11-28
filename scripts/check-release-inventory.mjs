@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Lists every release-version inventory that is stale for the declared current
-// release, in one pass, without a database, Docker or network.
+// Lists stale release-version inventories for the declared current release, in
+// one pass, without a database, Docker or network. It works per file (see rule
+// 2) plus the specific structures it parses; it is a diagnostic, not proof.
 //
 // "Current" (C) and "previous" (P) come from release-states.json: C is
 // `current` and P is the identity row before it. The checks only add failures;
@@ -20,6 +21,19 @@ const INSTALLERS = "scripts/local_postgres_verification.py";
 const PREFLIGHT_RENDERER = "scripts/release-attestation/preflight.mjs";
 const ROLLOUT = "scripts/studio-comp-migration-rollout.mjs";
 const BACKEND_READINESS = "backend/app/services/generated_release_readiness.py";
+
+// Files whose structure rules 4-7 parse. Each must exist: a deleted or renamed
+// file is a finding, never a silently skipped rule.
+const PARSED_FILES = [INSTALLERS, RUNNER, PREFLIGHT_RENDERER, ROLLOUT];
+
+// The two preflight rendering lists, each required on its own so renaming one
+// (for example to a Set) cannot hide behind the other.
+const PREFLIGHT_LISTS = [
+  { structure: "UTC/ISO session settings: if ([\"v..\", ...].includes(state.id)) { rendered = rendered.replace(... SET TimeZone TO 'UTC' ...",
+    pattern: /if \(\[(?:\s*"[A-Za-z0-9-]+",?)+\s*\]\.includes\(state\.id\)\) \{\n[^\n]*SET TimeZone TO 'UTC'/ },
+  { structure: "blank-line normalization: return [\"v..\", ...].includes(state.id) ? rendered.replace(/^[ \\t]+$/gm, \"\")",
+    pattern: /return \[(?:\s*"[A-Za-z0-9-]+",?)+\s*\]\.includes\(state\.id\) \? rendered\.replace\(\/\^\[ \\t\]\+\$\/gm, ""\)/ },
+];
 
 // Pins for the current release live in these trees. Migrations are applied
 // history and docs are prose, so neither is scanned.
@@ -83,6 +97,9 @@ export function directorySource(root) {
     const top = execFileSync("git", ["-C", absolute, "rev-parse", "--show-toplevel"],
       { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
     if (fs.realpathSync(top) === fs.realpathSync(absolute)) {
+      // Index entries deleted from the working tree are dropped; PARSED_FILES
+      // and the declarations are required separately, so dropping one of
+      // those is reported (or fails) instead of skipping its rule.
       files = execFileSync("git", ["-C", absolute, "ls-files", "-z"], { encoding: "utf8", maxBuffer: 64 << 20 })
         .split("\0").filter(Boolean).filter(file => fs.existsSync(path.join(absolute, file)));
     }
@@ -139,8 +156,15 @@ function escape(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// Declarations are inputs, not findings: without them nothing can be checked,
+// so a missing one stops the check (exit 2) instead of reporting zero.
+function readDeclaration(source, file) {
+  if (!source.files.includes(file)) throw new Error(`${file}: required declaration is missing`);
+  return JSON.parse(source.read(file));
+}
+
 function loadReleases(source) {
-  const declarations = JSON.parse(source.read(DECLARATION));
+  const declarations = readDeclaration(source, DECLARATION);
   const identities = declarations.identities;
   const index = identities.findIndex(row => row[0] === declarations.current);
   if (index < 1) throw new Error(`${DECLARATION}: current release ${declarations.current} needs a declared predecessor`);
@@ -211,10 +235,11 @@ export function checkReleaseInventory(source) {
       report(DECLARATION, 1, `${C.id} manifest version is v${C.manifestNumber}`, `manifest v${currentNumber}`);
     }
   }
-  if (!Object.hasOwn(JSON.parse(source.read(PREFLIGHT_SCHEMA)).states ?? {}, C.id)) {
+  // A renamed `states`/`cases` key reads as empty and is reported below.
+  if (!Object.hasOwn(readDeclaration(source, PREFLIGHT_SCHEMA).states ?? {}, C.id)) {
     report(PREFLIGHT_SCHEMA, 1, `no preflight state for ${C.id}`, `declare states.${C.id}`);
   }
-  const pythonCases = JSON.parse(source.read(PYTHON_RESTORE_SCHEMA)).cases ?? {};
+  const pythonCases = readDeclaration(source, PYTHON_RESTORE_SCHEMA).cases ?? {};
   if (!Object.hasOwn(pythonCases, C.id)) {
     report(PYTHON_RESTORE_SCHEMA, 1, `no restore case for ${C.id}`, `declare cases.${C.id}`);
   }
@@ -222,9 +247,15 @@ export function checkReleaseInventory(source) {
   const scanned = source.files.filter(file => SCANNED_PREFIXES.some(prefix => file.startsWith(prefix))
     && !file.endsWith(".md") && !CHECKER_FILES.has(file));
   const texts = new Map(scanned.map(file => [file, source.read(file)]));
+  for (const file of PARSED_FILES) {
+    if (!texts.has(file)) report(file, 1, "required file is missing or renamed", "restore it, or update scripts/check-release-inventory.mjs for the new path");
+  }
 
-  // 2. Stale pins: a file that names the previous release must also name the
-  // current one, per token family.
+  // 2. Stale pins, per file: a file that names the previous release must also
+  // name the current one, per token family. A file that names the current
+  // release anywhere passes for that family even if another pin in it is still
+  // stale, and a file that does not exist is not checked; the dedicated suites
+  // remain the proof. Files containing NUL are binary and skipped.
   for (const [file, text] of texts) {
     const bound = VERSION_BOUND_FILES[file];
     if (DECLARATION_FILES.has(file) || boundByName(file, versionNumber(C.id) ?? -1) || text.includes("\0")
@@ -257,7 +288,7 @@ export function checkReleaseInventory(source) {
       }
     }
   }
-  if (texts.has(INSTALLERS)) {
+  if (texts.has(INSTALLERS)) { // required: reported above when absent
     const text = texts.get(INSTALLERS);
     const definitions = [...text.matchAll(/^def (install_final_(v\d+))\(/gm)].map(match => {
       const next = text.slice(match.index + 1).search(/^def /m);
@@ -284,7 +315,7 @@ export function checkReleaseInventory(source) {
   }
 
   // 5. Runner reachability for the newest restore and the previous release.
-  if (texts.has(RUNNER)) {
+  if (texts.has(RUNNER)) { // required: reported above when absent
     const text = texts.get(RUNNER);
     const lines = text.split("\n");
     const count = /\$\{#migration_files\[@\]\} -ne (\d+)/.exec(text);
@@ -301,6 +332,8 @@ export function checkReleaseInventory(source) {
       for (let index = from; index < to; index++) if (predicate(lines[index])) return index;
       return -1;
     };
+    // Without a current Python restore case rule 1 already reported it; without
+    // the history part the missing() above reported it.
     if (Object.hasOwn(pythonCases, C.id)) {
       if (start >= 0 && end > start) {
         const restore = lineOf(line => line.includes(newest), start, end);
@@ -317,6 +350,9 @@ export function checkReleaseInventory(source) {
         report(RUNNER, lines.length, `no ${P.id}-${C.id} restore outside the history part`, `run scripts/${newest} in the current part`);
       }
     }
+    // Optional by design: releases before V39 had shell restores, and a former
+    // newest restore that no longer runs outside the history part is the
+    // desired state, not a missing structure.
     if (PP && Object.hasOwn(pythonCases, P.id)) {
       const former = `verify-${PP.id}-${P.id}-restore-contract.py`;
       const call = lineOf(line => line.includes(former), end > 0 ? end + 1 : 0);
@@ -329,6 +365,9 @@ export function checkReleaseInventory(source) {
         }
       }
     }
+    // A runner that never applies the current migration has no apply line;
+    // then every FINAL use counts as early, and the migration-head family in
+    // rule 2 reports the previous head without the current one.
     const currentApply = lineOf(line => applies(line, C), end > 0 ? end + 1 : 0);
     lines.forEach((line, index) => {
       if (index > end && line.includes("FINAL_OPERATIONAL_READINESS") && (currentApply < 0 || index < currentApply)) {
@@ -339,23 +378,22 @@ export function checkReleaseInventory(source) {
   }
 
   // 6. Preflight rendering lists that name the previous release must also
-  // name the current one (UTC/ISO settings and blank-line normalization).
-  if (texts.has(PREFLIGHT_RENDERER)) {
+  // name the current one. Both known lists (UTC/ISO settings and blank-line
+  // normalization) must be found; any other such list is checked too.
+  if (texts.has(PREFLIGHT_RENDERER)) { // required: reported above when absent
     const text = texts.get(PREFLIGHT_RENDERER);
-    let lists = 0;
+    for (const list of PREFLIGHT_LISTS) if (!list.pattern.test(text)) missing(PREFLIGHT_RENDERER, list.structure);
     for (const match of text.matchAll(/\[((?:\s*"[A-Za-z0-9-]+",?)+)\s*\]\.includes\(state\.id\)/g)) {
       const ids = [...match[1].matchAll(/"([A-Za-z0-9-]+)"/g)].map(m => m[1]);
-      lists++;
       if (ids.includes(P.id) && !ids.includes(C.id)) {
         report(PREFLIGHT_RENDERER, lineAt(text, match.index), `rendering list [${ids.at(0)}..${ids.at(-1)}] names ${P.id} without ${C.id}`,
           `add "${C.id}" to the list`);
       }
     }
-    if (!lists) missing(PREFLIGHT_RENDERER, '["v..", ...].includes(state.id)');
   }
 
   // 7. Guarded rollout chain.
-  if (texts.has(ROLLOUT)) {
+  if (texts.has(ROLLOUT)) { // required: reported above when absent
     const text = texts.get(ROLLOUT);
     const approval = /expectedProviderFingerprint\.startsWith\("([A-Za-z0-9-]+)_catalog="\)/.exec(text);
     if (!approval) missing(ROLLOUT, 'expectedProviderFingerprint.startsWith("vNN_catalog=")');
