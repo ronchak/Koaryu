@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
+
+import httpx
+from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.db.supabase import close_supabase_client, create_supabase_client
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
@@ -17,6 +21,42 @@ from app.services.generated_release_readiness import (
 
 
 HOSTED_READINESS_SUCCESS_TTL_SECONDS = 30.0
+# Render probes every 5 seconds, gives each probe 5 seconds, and stops routing
+# to an instance after about 15 seconds of failures. A readiness answer must
+# therefore arrive inside one probe, and a lock held for longer than 15 seconds
+# by a guarded migration must not read as "not ready" on an instance that was
+# just proven ready. The grace is measured from the last successful preflight,
+# not from the first failure, so it covers about five success TTLs and the
+# two-minute lock window seen during the V61 rollout. Beyond it the instance
+# fails closed again.
+HOSTED_READINESS_TRANSIENT_GRACE_SECONDS = 180.0
+HOSTED_READINESS_PROBE_BUDGET_SECONDS = 4.0
+
+logger = logging.getLogger(__name__)
+
+# Only failures that mean "no answer was obtained" qualify for the grace:
+# statement or lock timeouts, PostgREST connection/pool availability, and a
+# gateway that returned a non-JSON 502/503/504. Every other error, including a
+# missing preflight RPC and any returned mismatch, is a definite answer.
+_TRANSIENT_POSTGREST_CODES = frozenset(
+    {
+        "57014",  # query_canceled: statement_timeout
+        "55P03",  # lock_not_available: lock_timeout
+        "PGRST000",
+        "PGRST001",
+        "PGRST002",
+        "PGRST003",
+        "502",
+        "503",
+        "504",
+    }
+)
+_TRANSIENT_TRANSPORT_ERRORS = (
+    TimeoutError,
+    httpx.TimeoutException,
+    httpx.NetworkError,
+    httpx.RemoteProtocolError,
+)
 
 # Kept as a patchable factory symbol for existing readiness tests. It is an
 # isolated factory alias, not the removed process-global accessor.
@@ -102,6 +142,19 @@ def assert_hosted_release_schema_ready() -> None:
             close_supabase_client(client)
 
 
+def is_transient_readiness_error(exc: BaseException) -> bool:
+    """Return True only when the preflight produced no answer at all."""
+    if isinstance(exc, PostgrestAPIError):
+        return str(getattr(exc, "code", None)) in _TRANSIENT_POSTGREST_CODES
+    return isinstance(exc, _TRANSIENT_TRANSPORT_ERRORS)
+
+
+def _describe_transient_error(exc: BaseException) -> str:
+    if isinstance(exc, PostgrestAPIError):
+        return f"{type(exc).__name__} {getattr(exc, 'code', None)}"
+    return type(exc).__name__
+
+
 async def _run_check_in_thread(check: Callable[[], None]) -> None:
     await asyncio.to_thread(check)
 
@@ -112,6 +165,14 @@ class HostedReleaseReadinessCache:
     Failures are never cached. Waiters suspend on the event-loop lock before
     the blocking check receives a worker thread, so health probes cannot occupy
     the shared request thread pool while another preflight is in flight.
+
+    Each waiter gives up after the probe budget while the shared check keeps
+    running, so its eventual answer is still recorded. When no answer could be
+    obtained (see ``is_transient_readiness_error``) and the last success is
+    younger than the transient grace, the waiter reports ready and logs the
+    degraded state. Any definite answer that is not a success clears the last
+    success, so a later timeout cannot mask it. A process that has never
+    succeeded has no grace.
     """
 
     def __init__(
@@ -121,24 +182,45 @@ class HostedReleaseReadinessCache:
         monotonic=time.monotonic,
         run_check: Callable[[Callable[[], None]], Awaitable[None]] = (_run_check_in_thread),
         success_ttl_seconds: float = HOSTED_READINESS_SUCCESS_TTL_SECONDS,
+        transient_grace_seconds: float = HOSTED_READINESS_TRANSIENT_GRACE_SECONDS,
+        probe_budget_seconds: float = HOSTED_READINESS_PROBE_BUDGET_SECONDS,
     ) -> None:
         if success_ttl_seconds <= 0:
             raise ValueError("success_ttl_seconds must be positive")
+        if transient_grace_seconds < success_ttl_seconds:
+            raise ValueError("transient_grace_seconds must be at least success_ttl_seconds")
+        if probe_budget_seconds <= 0:
+            raise ValueError("probe_budget_seconds must be positive")
         self._check = check
         self._monotonic = monotonic
         self._run_check = run_check
         self._success_ttl_seconds = success_ttl_seconds
+        self._transient_grace_seconds = transient_grace_seconds
+        self._probe_budget_seconds = probe_budget_seconds
         self._last_success_monotonic: float | None = None
         self._inflight_lock = asyncio.Lock()
         self._inflight: asyncio.Task[None] | None = None
 
-    def _success_is_fresh(self) -> bool:
-        now = self._monotonic()
+    def _last_success_age(self) -> float | None:
         last_success = self._last_success_monotonic
-        return last_success is not None and 0 <= now - last_success < self._success_ttl_seconds
+        if last_success is None:
+            return None
+        age = self._monotonic() - last_success
+        return age if age >= 0 else None
 
-    async def _check_and_cache_success(self) -> None:
-        await self._run_check(self._check)
+    def _success_is_fresh(self) -> bool:
+        age = self._last_success_age()
+        return age is not None and age < self._success_ttl_seconds
+
+    async def _check_and_record(self) -> None:
+        # The shared task, not its waiters, records the outcome so an answer
+        # that arrives after every waiter's budget still takes effect.
+        try:
+            await self._run_check(self._check)
+        except BaseException as exc:
+            if not is_transient_readiness_error(exc):
+                self._last_success_monotonic = None
+            raise
         self._last_success_monotonic = self._monotonic()
 
     def _clear_inflight(self, completed: asyncio.Task[None]) -> None:
@@ -159,13 +241,27 @@ class HostedReleaseReadinessCache:
                 return
             inflight = self._inflight
             if inflight is None:
-                inflight = asyncio.create_task(self._check_and_cache_success())
+                inflight = asyncio.create_task(self._check_and_record())
                 self._inflight = inflight
                 inflight.add_done_callback(self._clear_inflight)
 
-        # One cancelled HTTP request must not cancel the shared provider check
-        # underneath other readiness waiters.
-        await asyncio.shield(inflight)
+        # One cancelled or timed-out HTTP request must not cancel the shared
+        # provider check underneath other readiness waiters.
+        try:
+            await asyncio.wait_for(asyncio.shield(inflight), timeout=self._probe_budget_seconds)
+        except Exception as exc:
+            if not is_transient_readiness_error(exc):
+                raise
+            age = self._last_success_age()
+            if age is None or age >= self._transient_grace_seconds:
+                raise
+            logger.warning(
+                "Readiness preflight gave no answer (%s); serving ready within "
+                "transient grace, last success %.1fs ago of %.0fs allowed",
+                _describe_transient_error(exc),
+                age,
+                self._transient_grace_seconds,
+            )
 
 
 _HOSTED_READINESS_CACHE = HostedReleaseReadinessCache()

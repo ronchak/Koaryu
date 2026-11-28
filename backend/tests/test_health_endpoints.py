@@ -4,8 +4,32 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.main import app
+from app.services.release_schema_readiness import HostedReleaseReadinessCache
+
+
+def _statement_timeout():
+    return PostgrestAPIError(
+        {"code": "57014", "message": "canceling statement due to statement timeout"}
+    )
+
+
+def _scripted_readiness_cache(outcomes, now):
+    def check():
+        outcome = outcomes.pop(0)
+        if outcome is not None:
+            raise outcome
+
+    async def run_check(blocking_check):
+        blocking_check()
+
+    return HostedReleaseReadinessCache(
+        check=check,
+        monotonic=lambda: now[0],
+        run_check=run_check,
+    )
 
 
 class HealthEndpointTest(unittest.TestCase):
@@ -86,6 +110,47 @@ class HealthEndpointTest(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()["detail"], "Runtime configuration is not ready.")
         self.assertNotIn("schema 84", response.text)
+
+    def _hosted_settings(self):
+        return SimpleNamespace(
+            ENVIRONMENT="production",
+            STRIPE_MODE="live",
+            STRIPE_SECRET_KEY="sk_live_not_a_real_provider_credential",
+            validate_runtime_configuration=lambda: None,
+        )
+
+    def test_proven_ready_instance_stays_ready_through_a_statement_timeout(self):
+        now = [10.0]
+        cache = _scripted_readiness_cache([None, _statement_timeout()], now)
+        with (
+            patch("app.api.v1.endpoints.health.get_settings", return_value=self._hosted_settings()),
+            patch("app.services.release_schema_readiness._HOSTED_READINESS_CACHE", cache),
+        ):
+            first = self.client.get("/health/ready")
+            now[0] = 60.0
+            with self.assertLogs("app.services.release_schema_readiness", "WARNING") as logs:
+                during_lock = self.client.get("/health/ready")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(during_lock.status_code, 200)
+        # verify-deployed-release.mjs and the rehearsal collector read this body.
+        self.assertEqual(during_lock.json(), first.json())
+        self.assertEqual(during_lock.json()["status"], "ready")
+        self.assertIn("APIError 57014", logs.records[0].getMessage())
+
+    def test_statement_timeout_without_a_prior_success_serves_503(self):
+        now = [10.0]
+        cache = _scripted_readiness_cache([_statement_timeout()], now)
+        with (
+            patch("app.api.v1.endpoints.health.get_settings", return_value=self._hosted_settings()),
+            patch("app.services.release_schema_readiness._HOSTED_READINESS_CACHE", cache),
+            self.assertLogs("app.api.v1.endpoints.health", "ERROR"),
+        ):
+            response = self.client.get("/health/ready")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"], "Runtime configuration is not ready.")
+        self.assertNotIn("57014", response.text)
 
     def test_hosted_readiness_accepts_only_successful_database_preflight(self):
         settings = SimpleNamespace(
